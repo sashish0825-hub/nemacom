@@ -1,9 +1,9 @@
 HELP = """
-nemacom_all.py — NemaCom in one file.
+nemacom_all.py — NEMO-NEMA in one file.
 
-  python3 nemacom_all.py template     -> writes NemaCom_input_template.xlsx
-  python3 nemacom_all.py demo         -> writes NemaCom_demo_data.xlsx
-  python3 nemacom_all.py run FILE.xlsx-> analyses, writes NemaCom_results.xlsx + figures
+  python3 nemacom_all.py template     -> writes NEMO-NEMA_input_template.xlsx
+  python3 nemacom_all.py demo         -> writes NEMO-NEMA_demo_data.xlsx
+  python3 nemacom_all.py run FILE.xlsx-> analyses, writes NEMO-NEMA_results.xlsx + figures
   streamlit run nemacom_all.py        -> interactive app
 
 SOURCES (verify each before publishing):
@@ -368,8 +368,8 @@ def footprints(counts, taxa, include_fu2=False):
 
 
 # ---------------------------------------------------------------- templates
-def write_template(path="NemaCom_input_template.xlsx"):
-    readme = pd.DataFrame({"NemaCom input template": [
+def write_template(path="NEMO-NEMA_input_template.xlsx"):
+    readme = pd.DataFrame({"NEMO-NEMA input template": [
         "Fill the sheets below. Do not rename sheets or first-row headers.",
         "",
         "counts : taxa in rows, samples in columns, individuals recovered.",
@@ -407,7 +407,7 @@ def write_template(path="NemaCom_input_template.xlsx"):
     return path
 
 
-def write_demo(path="NemaCom_demo_data.xlsx"):
+def write_demo(path="NEMO-NEMA_demo_data.xlsx"):
     rng = np.random.default_rng(7)
     tx = [("Meloidogyne graminicola", "PP", 3), ("Hirschmanniella oryzae", "PP", 3),
           ("Helicotylenchus dihystera", "PP", 3), ("Tylenchorhynchus mashhoodi", "PP", 3),
@@ -470,7 +470,7 @@ def run_cli(path, pv_divisor=1.0):
     sc, var = pca(counts)
     g = samples["group"] if samples is not None and "group" in samples else None
 
-    with pd.ExcelWriter("NemaCom_results.xlsx", engine="openpyxl") as x:
+    with pd.ExcelWriter("NEMO-NEMA_results.xlsx", engine="openpyxl") as x:
         n.to_excel(x, sheet_name="Norton_community")
         d.to_excel(x, sheet_name="Diversity")
         f.to_excel(x, sheet_name="Faunal_indices")
@@ -529,7 +529,7 @@ def run_cli(path, pv_divisor=1.0):
         a.text(xx, yy, l, color="grey", fontsize=8)
     a.set_title("D. Faunal profile (Ferris et al. 2001)", loc="left", fontweight="bold")
     fig.tight_layout()
-    fig.savefig("NemaCom_figures.png", dpi=170)
+    fig.savefig("NEMO-NEMA_figures.png", dpi=170)
 
     print(f"{counts.shape[0]} taxa x {counts.shape[1]} samples")
     print("\n--- Norton community analysis ---")
@@ -541,29 +541,72 @@ def run_cli(path, pv_divisor=1.0):
         print(nsh.to_string())
         print("  NSH <15 degraded | 15-24 moderate | >25 well-functioning")
         print("  Abundance must be per 100 g dry soil for the MF band to be valid.")
-    print("\nWrote NemaCom_results.xlsx and NemaCom_figures.png")
+    print("\nWrote NEMO-NEMA_results.xlsx and NEMO-NEMA_figures.png")
 
 
 # ---------------------------------------------------------------- Streamlit
+def _nn_footer(st):
+    st.divider()
+    st.markdown(
+        "<div style='font-size:0.87rem; line-height:1.65; color:#3E4A44'>"
+        "<b>Developed by</b><br>"
+        "Ashish Kumar Singh &middot; Kavita Jain &middot; "
+        "Vishal Singh Somvanshi &middot; Rashid Pervez &middot; "
+        "Anil Sirohi &middot; Pankaj<br>"
+        "<span style='color:#5B6B62'>Division of Nematology, ICAR-Indian "
+        "Agricultural Research Institute, New Delhi 110012</span></div>",
+        unsafe_allow_html=True)
+
+
 def run_app():
     import streamlit as st
+    from nemonema_manual import MANUAL
+    import nemonema_report as rpt
     import matplotlib.pyplot as plt
-    import nemacom_plots as npl
-    st.set_page_config(page_title="NemaCom", page_icon="\U0001F52C", layout="wide")
+    import nemonema_plots as npl
+    st.set_page_config(page_title="NEMO-NEMA", page_icon="\U0001F52C", layout="wide")
 
-    st.title("NemaCom")
-    st.caption("Nematode community analysis, faunal indices and soil health scoring "
-               "from a single spreadsheet.")
+    st.markdown("""<style>
+      .block-container {padding-top: 2.2rem; max-width: 1500px;}
+      .stTabs [data-baseweb="tab-list"] {gap: 2px; border-bottom: 1px solid #DED6C6;}
+      .stTabs [data-baseweb="tab"] {height: 42px; padding: 0 16px;
+        background: transparent; border-radius: 6px 6px 0 0; font-size: 0.93rem;}
+      .stTabs [aria-selected="true"] {background: #F1ECE1;
+        border-bottom: 2px solid #2E7D5B; color: #17453A;}
+      .nn-rule {height:3px; width:74px;
+        background:linear-gradient(90deg,#17453A,#8CBB72);
+        border-radius:2px; margin:2px 0 14px 0;}
+      .nn-sub {color:#5B6B62; font-size:0.92rem; line-height:1.5;}
+      .nn-cp {display:inline-block; width:9px; height:9px; border-radius:50%;
+        margin-right:5px; vertical-align:middle;}
+    </style>""", unsafe_allow_html=True)
+    import os as _os
+    _h = st.columns([1, 9])
+    with _h[0]:
+        if _os.path.exists("icar_logo.png"):
+            st.image("icar_logo.png", width=92)
+    with _h[1]:
+        st.markdown("<h1 style='margin-bottom:0'>NEMO-NEMA</h1>"
+                    "<div class='nn-rule'></div>"
+                    "<div class='nn-sub'><b>N</b>ematode <b>E</b>cological "
+                    "<b>M</b>etrics and <b>O</b>rdination for <b>N</b>ematode "
+                    "<b>E</b>cosystem <b>M</b>onitoring and <b>A</b>ssessment"
+                    "<br><span style='color:#8A9690'>"
+                    + "".join(f"<span class='nn-cp' style='background:{c}'></span>"
+                              for c in ["#D55E00","#E69F00","#F0E442","#56B4E9","#17453A"])
+                    + "c-p 1 to 5 &nbsp;&middot;&nbsp; version 1.0</span></div>",
+                    unsafe_allow_html=True)
+    st.write("")
 
     with st.sidebar:
         st.header("1. Your data")
         up = st.file_uploader("Excel workbook (.xlsx)", type=["xlsx"])
         st.download_button("Download blank template",
-                           data=_template_bytes(), file_name="NemaCom_template.xlsx",
+                           data=_template_bytes(), file_name="NEMO-NEMA_template.xlsx",
                            mime="application/vnd.openxmlformats-officedocument."
                                 "spreadsheetml.sheet")
         st.download_button("Download demo dataset",
-                           data=_demo_bytes(), file_name="NemaCom_demo.xlsx",
+                           data=_demo_bytes(), file_name="NEMO-NEMA_demo.xlsx",
                            mime="application/vnd.openxmlformats-officedocument."
                                 "spreadsheetml.sheet")
         st.header("2. Figure style")
@@ -583,20 +626,32 @@ def run_app():
                              help="NSH abundance bands assume per 100 g dry soil.")
 
     if up is None:
-        st.info("Upload a workbook to begin, or download the demo dataset from the "
-                "sidebar to see what the output looks like.")
-        st.markdown("""
-**Your workbook needs three sheets**
+        import os as _os
+        if _os.path.exists("micrograph.jpg"):
+            _c = st.columns([3, 2])
+            with _c[1]:
+                st.image("micrograph.jpg",
+                         caption="Soil nematode, 4x. Division of Nematology, "
+                                 "ICAR-IARI.")
+            _tgt = _c[0]
+        else:
+            _tgt = st.container()
+        with _tgt:
+            st.info("Upload a workbook to begin, or download the demo dataset from the "
+                    "sidebar to see what the output looks like.")
+            st.markdown("""
+    **Your workbook needs three sheets**
 
-| Sheet | Contents |
-|---|---|
-| `counts` | taxa in rows, samples in columns, individuals recovered |
-| `taxa` | one row per taxon: `trophic` (PP/BF/FF/OM/PR), `cp` (1-5), `source` |
-| `samples` | one row per sample: `group` = the factor being compared |
+    | Sheet | Contents |
+    |---|---|
+    | `counts` | taxa in rows, samples in columns, individuals recovered |
+    | `taxa` | one row per taxon: `trophic` (PP/BF/FF/OM/PR), `cp` (1-5), `source` |
+    | `samples` | one row per sample: `group` = the factor being compared |
 
-Optional `length_um` and `diameter_um` columns in `taxa` unlock biomass and
-metabolic footprints.
-""")
+    Optional `length_um` and `diameter_um` columns in `taxa` unlock biomass and
+    metabolic footprints.
+    """)
+        _nn_footer(st)
         return
 
     try:
@@ -633,7 +688,7 @@ metabolic footprints.
             st.warning(f"Footprints unavailable: {exc}")
 
     tabs = st.tabs(["Community", "Diversity", "Faunal analysis",
-                    "Soil health (NSH)", "Footprints", "Statistics", "Download"])
+                    "Soil health (NSH)", "Footprints", "Statistics", "Download", "Report", "Manual"])
 
     with tabs[0]:
         st.subheader("Norton (1978) community descriptors")
@@ -758,9 +813,29 @@ metabolic footprints.
                           "value": [pv, basis, counts.shape[1], counts.shape[0]]
                           }).to_excel(x, sheet_name="Methods_log", index=False)
         st.download_button("Download all results (.xlsx)", buf.getvalue(),
-                           file_name="NemaCom_results.xlsx",
+                           file_name="NEMO-NEMA_results.xlsx",
                            mime="application/vnd.openxmlformats-officedocument."
                                 "spreadsheetml.sheet")
+
+    with tabs[7]:
+        st.subheader("Full report")
+        st.write("One PDF with every table, the figures, the interpretation, "
+                 "the methods log and the references.")
+        try:
+            _s = compare(dv.join(fn), grp) if grp is not None else None
+            _p = rpt.build_report(counts, taxa, samples, nrt, dv, fn, ex, nsh,
+                                  fps, _s, plots=npl, palette=pal, err=errtype,
+                                  settings={"prominence_value": pv, "soil_basis": basis})
+            st.download_button("Download full report (PDF)", _p,
+                               "NEMO-NEMA_report.pdf", "application/pdf")
+        except Exception as e:
+            st.warning(f"Report could not be built: {e}")
+
+    with tabs[8]:
+        st.subheader("User manual")
+        st.markdown(MANUAL)
+
+    _nn_footer(st)
 
     st.divider()
     st.caption("Verify trophic and c-p assignments against primary sources before "
