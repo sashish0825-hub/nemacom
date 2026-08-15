@@ -547,6 +547,8 @@ def run_cli(path, pv_divisor=1.0):
 # ---------------------------------------------------------------- Streamlit
 def run_app():
     import streamlit as st
+    import matplotlib.pyplot as plt
+    import nemacom_plots as npl
     st.set_page_config(page_title="NemaCom", page_icon="\U0001F52C", layout="wide")
 
     st.title("NemaCom")
@@ -564,7 +566,16 @@ def run_app():
                            data=_demo_bytes(), file_name="NemaCom_demo.xlsx",
                            mime="application/vnd.openxmlformats-officedocument."
                                 "spreadsheetml.sheet")
-        st.header("2. Options")
+        st.header("2. Figure style")
+        pal = st.selectbox("Colour palette", list(npl.PALETTES.keys()))
+        st.markdown(" ".join(
+            f'<span style="display:inline-block;width:22px;height:14px;'
+            f'background:{c};border:1px solid #999;margin-right:2px"></span>'
+            for c in npl.palette(pal, 8)), unsafe_allow_html=True)
+        errtype = st.radio("Error bars", ["SE", "SD", "CI95"], horizontal=True)
+        fsize = st.slider("Font size", 8, 16, 10)
+        dpi = st.select_slider("Figure resolution (dpi)", [100, 150, 300, 600], 300)
+        st.header("3. Options")
         pv = st.radio("Prominence value", ["D x sqrt(F)", "D x sqrt(F) / 10"],
                       help="Both are cited as Norton (1978). State which you used.")
         basis = st.selectbox("Counts are expressed per",
@@ -632,9 +643,22 @@ metabolic footprints.
     with tabs[1]:
         st.subheader("Per-sample diversity")
         st.dataframe(dv.round(3), use_container_width=True)
-        m = st.selectbox("Chart", ["shannon_H", "simpson_1minusD", "pielou_J",
-                                   "margalef_d", "richness_S", "total_N"])
-        st.bar_chart(dv[m])
+        m = st.selectbox("Metric to plot", ["shannon_H", "simpson_1minusD",
+                                            "pielou_J", "margalef_d",
+                                            "richness_S", "total_N"])
+        if grp is None:
+            st.bar_chart(dv[m])
+        else:
+            npl.apply_style(fsize)
+            tk = npl.tukey_posthoc(dv[m], grp)
+            letters = npl.compact_letters(tk) if not tk.empty else None
+            fig, ax = plt.subplots(figsize=(7, 4.5))
+            npl.bar_with_error(dv[m], grp, err=errtype, pal=pal, ylabel=m,
+                               title=m, letters=letters, ax=ax)
+            st.pyplot(fig, use_container_width=False)
+            st.download_button("Download figure (PNG)", _fig_bytes(fig, dpi),
+                               f"{m}.png", "image/png")
+            plt.close(fig)
 
     with tabs[2]:
         st.subheader("Maturity and food-web indices")
@@ -659,7 +683,32 @@ metabolic footprints.
                            "assumes per 100 g dry soil, so the MF score - and the "
                            "total - will be wrong until you convert.")
             st.dataframe(nsh, use_container_width=True)
-            st.bar_chart(nsh["NSH"])
+            if grp is not None:
+                npl.apply_style(fsize)
+                tk = npl.tukey_posthoc(nsh["NSH"], grp)
+                fig, ax = plt.subplots(figsize=(7, 4.5))
+                npl.bar_with_error(nsh["NSH"], grp, err=errtype, pal=pal,
+                                   ylabel="NSH index", title="Soil health",
+                                   letters=npl.compact_letters(tk)
+                                   if not tk.empty else None, ax=ax)
+                ax.axhline(15, ls="--", c="#C44E52", lw=1)
+                ax.axhline(25, ls="--", c="#55A868", lw=1)
+                st.pyplot(fig, use_container_width=False)
+                plt.close(fig)
+            else:
+                st.bar_chart(nsh["NSH"])
+            st.divider()
+            st.subheader("Calibration check")
+            st.dataframe(npl.subscore_contributions(nsh).round(2),
+                         use_container_width=True)
+            if grp is not None:
+                disc = npl.nsh_discrimination(nsh, grp)
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Scale used", f"{disc.get('pct_of_scale_used', 0):.0f}%")
+                c2.metric("eta squared",
+                          f"{disc.get('eta_squared', float('nan')):.2f}")
+                c3.metric("Categories",
+                          f"{disc.get('n_categories_occupied', 0)} of 3")
             st.caption("Thresholds were calibrated on Australian and European "
                        "datasets; the authors state further calibration is needed. "
                        "Interpret with care outside those systems.")
@@ -716,6 +765,12 @@ metabolic footprints.
     st.divider()
     st.caption("Verify trophic and c-p assignments against primary sources before "
                "publishing: every maturity and food-web index depends on them.")
+
+
+def _fig_bytes(fig, dpi=300):
+    b = io.BytesIO()
+    fig.savefig(b, format="png", dpi=dpi, bbox_inches="tight")
+    return b.getvalue()
 
 
 def _template_bytes():
