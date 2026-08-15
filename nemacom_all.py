@@ -15,6 +15,7 @@ SOURCES (verify each before publishing):
   Andrassy (1956) Acta Zoologica 2:1-15                      -> biomass
   Ferris (2010) Eur J Soil Biol 46:97-104                    -> metabolic footprints
 """
+import io
 import sys
 import numpy as np
 import pandas as pd
