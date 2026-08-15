@@ -1,4 +1,4 @@
-"""
+HELP = """
 nemacom_all.py — NemaCom in one file.
 
   python3 nemacom_all.py template     -> writes NemaCom_input_template.xlsx
@@ -731,7 +731,17 @@ def _demo_bytes():
     return open(p, "rb").read()
 
 
-if __name__ == "__main__":
+def _under_streamlit():
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+        return get_script_run_ctx() is not None
+    except Exception:
+        return False
+
+
+if _under_streamlit():
+    run_app()
+elif __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "help"
     if cmd == "template":
         print("written:", write_template())
@@ -740,10 +750,4 @@ if __name__ == "__main__":
     elif cmd == "run":
         run_cli(sys.argv[2], 10.0 if "--pv10" in sys.argv else 1.0)
     else:
-        print(__doc__)
-else:
-    try:
-        import streamlit  # noqa
-        run_app()
-    except ImportError:
-        pass
+        print(HELP)
