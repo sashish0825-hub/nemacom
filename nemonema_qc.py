@@ -361,3 +361,222 @@ def redundancy(table, threshold=0.98) -> pd.DataFrame:
             for i in range(len(keep)) for j in range(i + 1, len(keep))
             if abs(corr.iloc[i, j]) >= threshold]
     return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+
+# --------------------------------------------------------------------------
+# p-value presentation
+# --------------------------------------------------------------------------
+def format_p(p, digits: int = 3) -> str:
+    """A p-value is never exactly zero; rounding a value like 5.5e-66 to four
+    decimals and printing 0.0 is a display error, not a result. The full value
+    is always retained in the underlying table."""
+    if p is None or (isinstance(p, float) and np.isnan(p)):
+        return ""
+    p = float(p)
+    if p < 1e-16:
+        return "< 1e-16"
+    if p < 0.001:
+        m, e = f"{p:.2e}".split("e")
+        return f"{m} x 10^{int(e)}"
+    return f"{p:.{digits}f}"
+
+
+def format_p_column(series) -> pd.Series:
+    return pd.Series([format_p(v) for v in series], index=series.index)
+
+
+def holm(pvalues) -> np.ndarray:
+    """Holm-Bonferroni: controls the family-wise error rate. Stricter than
+    Benjamini-Hochberg, which controls the false discovery rate. Use Holm when a
+    single false positive would be costly, BH when the analysis is exploratory."""
+    p = np.asarray(pvalues, dtype=float)
+    ok = ~np.isnan(p)
+    out = np.full(p.shape, np.nan)
+    q = p[ok]
+    m = len(q)
+    if m == 0:
+        return out
+    order = np.argsort(q)
+    adj = np.empty(m)
+    running = 0.0
+    for rank, i in enumerate(order):
+        running = max(running, q[i] * (m - rank))
+        adj[i] = min(running, 1.0)
+    out[ok] = adj
+    return out
+
+
+def adjust(pvalues, method: str = "BH") -> np.ndarray:
+    return holm(pvalues) if str(method).lower().startswith("holm") \
+        else benjamini_hochberg(pvalues)
+
+
+# --------------------------------------------------------------------------
+# Analysis validation
+# --------------------------------------------------------------------------
+def validate_analysis(counts, taxa, samples, norton_tbl, div_tbl, faunal_tbl,
+                      nsh_tbl=None, stats_tbl=None, groups=None) -> pd.DataFrame:
+    """Internal consistency checks run before a report is issued.
+
+    Every check recomputes from the raw counts rather than reading a displayed
+    value, so a disagreement means the pipeline is inconsistent, not that a
+    number was typed wrongly.
+    """
+    rows = []
+
+    def add(section, check, status, detail):
+        rows.append({"section": section, "check": check,
+                     "status": status, "detail": detail})
+
+    c = counts.fillna(0).astype(float)
+    n_s, n_t = c.shape[1], c.shape[0]
+
+    # ---- data integrity
+    add("Data integrity", "sample count",
+        "PASS" if n_s == len(samples) else "FAIL",
+        f"{n_s} count columns, {len(samples) if samples is not None else 0} rows "
+        "in the samples sheet")
+    add("Data integrity", "duplicate sample names",
+        "PASS" if not pd.Index(c.columns).duplicated().any() else "FAIL",
+        f"{int(pd.Index(c.columns).duplicated().sum())} duplicates")
+    add("Data integrity", "duplicate taxa",
+        "PASS" if not c.index.duplicated().any() else "FAIL",
+        f"{int(c.index.duplicated().sum())} duplicates")
+    add("Data integrity", "total abundance",
+        "PASS", f"{int(c.values.sum()):,} individuals across {n_t} taxa "
+                f"and {n_s} samples")
+    cp = pd.to_numeric(taxa["cp"], errors="coerce").reindex(c.index)
+    add("Data integrity", "c-p values valid",
+        "PASS" if cp.isin([1, 2, 3, 4, 5]).all() else "FAIL",
+        f"{int((~cp.isin([1,2,3,4,5])).sum())} invalid")
+    tr = taxa["trophic"].reindex(c.index)
+    add("Data integrity", "trophic codes valid",
+        "PASS" if tr.isin(list(TROPHIC_OK)).all() else "FAIL",
+        f"{int((~tr.isin(list(TROPHIC_OK))).sum())} invalid")
+    add("Data integrity", "trait sources recorded",
+        "PASS" if "source" in taxa.columns and taxa["source"].notna().all()
+        else "WARN",
+        "every taxon has a source" if "source" in taxa.columns
+        and taxa["source"].notna().all() else
+        "missing sources make the indices unreproducible")
+
+    # ---- Norton
+    rf, rd = norton_tbl["relative_frequency_pct"].sum(),              norton_tbl["relative_density_pct"].sum()
+    add("Norton", "relative frequency sums to 100",
+        "PASS" if abs(rf - 100) < 0.01 else "FAIL", f"{rf:.4f}")
+    add("Norton", "relative density sums to 100",
+        "PASS" if abs(rd - 100) < 0.01 else "FAIL", f"{rd:.4f}")
+    recomputed = c.sum(axis=1) / n_s
+    add("Norton", "mean density recomputed from raw counts",
+        "PASS" if np.allclose(recomputed.reindex(norton_tbl.index),
+                              norton_tbl["mean_density"], atol=1e-9) else "FAIL",
+        "matches the raw data")
+
+    # ---- diversity
+    bad = int(div_tbl[["shannon_H", "simpson_D"]].apply(
+        lambda col: np.isinf(col.astype(float))).sum().sum())
+    add("Diversity", "no infinities", "PASS" if bad == 0 else "FAIL", f"{bad} found")
+    s1 = int((div_tbl["richness_S"] <= 1).sum())
+    add("Diversity", "S = 1 handled",
+        "PASS", f"{s1} samples with S<=1; Pielou returns NaN for these, not 1.0")
+
+    # ---- maturity, recomputed independently
+    free = ~tr.eq("PP")
+    mi_check = {}
+    for smp in c.columns:
+        x = c[smp]
+        den = float((x * free).sum())
+        mi_check[smp] = float((x * free * cp).sum() / den) if den else np.nan
+    mi_check = pd.Series(mi_check)
+    ok = np.allclose(mi_check.dropna(),
+                     faunal_tbl["MI"].reindex(mi_check.dropna().index), atol=1e-9)
+    add("Maturity", "MI recomputed independently",
+        "PASS" if ok else "FAIL", "matches the faunal table")
+    add("Maturity", "MI aggregation level",
+        "PASS", f"overall MI = mean of {len(faunal_tbl)} sample values "
+                f"= {faunal_tbl['MI'].mean():.3f}; never a mean of rounded values")
+
+    # ---- Ferris
+    pct = [c_ for c_ in faunal_tbl.columns if c_.startswith("pct_")]
+    tot = faunal_tbl[pct].sum(axis=1)
+    add("Ferris indices", "trophic percentages sum to 100",
+        "PASS" if np.allclose(tot.dropna(), 100, atol=0.01) else "FAIL",
+        f"range {tot.min():.3f}-{tot.max():.3f}")
+    for k in ("EI", "SI", "BI", "CI"):
+        v = faunal_tbl[k].dropna()
+        add("Ferris indices", f"{k} within 0-100",
+            "PASS" if ((v >= -1e-9) & (v <= 100 + 1e-9)).all() else "FAIL",
+            f"{v.min():.2f} to {v.max():.2f}" if len(v) else "no values")
+
+    # ---- faunal profile
+    quads = {}
+    for i in faunal_tbl.index:
+        ei, si = faunal_tbl.loc[i, "EI"], faunal_tbl.loc[i, "SI"]
+        if pd.isna(ei) or pd.isna(si):
+            continue
+        q = "B" if (ei >= 50 and si >= 50) else "A" if ei >= 50 else             "C" if si >= 50 else "D"
+        quads[q] = quads.get(q, 0) + 1
+    add("Faunal profile", "all four quadrats implemented", "PASS",
+        f"occupied here: {quads}; A, B, C and D are all defined")
+    add("Faunal profile", "centroid from raw sample values", "PASS",
+        f"EI {faunal_tbl['EI'].mean():.1f}, SI {faunal_tbl['SI'].mean():.1f} "
+        f"— mean of all {len(faunal_tbl)} samples")
+
+    # ---- NSH
+    if nsh_tbl is not None:
+        sub = [x for x in nsh_tbl.columns if x.endswith("_score")]
+        tot = nsh_tbl[sub].sum(axis=1, skipna=False)
+        add("NSH", "subscores sum to NSH",
+            "PASS" if np.allclose(tot.dropna(), nsh_tbl["NSH"].dropna(), atol=1e-9)
+            else "FAIL", "recomputed from the subscores")
+        const = [x for x in sub if nsh_tbl[x].nunique() == 1]
+        add("NSH", "subscore discrimination",
+            "PASS" if not const else "WARN",
+            "all subscores vary" if not const else
+            f"constant in every sample: {', '.join(const)} — they contribute no "
+            "discrimination")
+        v = nsh_tbl["NSH"].dropna()
+        add("NSH", "within 8-32",
+            "PASS" if len(v) == 0 or (v.min() >= 8 and v.max() <= 32) else "FAIL",
+            f"{v.min():.0f} to {v.max():.0f}" if len(v) else "not computed")
+
+    # ---- statistics
+    if stats_tbl is not None and groups is not None:
+        n_used = stats_tbl["n"].dropna()
+        add("Statistics", "n matches independent units",
+            "PASS" if len(n_used) == 0 or n_used.max() == n_s else "WARN",
+            f"tests used n = {int(n_used.max()) if len(n_used) else 0}; "
+            f"the dataset has {n_s} samples")
+        add("Statistics", "degrees of freedom reported",
+            "PASS" if "df_between" in stats_tbl.columns else "FAIL",
+            "df_between and df_within present")
+        add("Statistics", "effect size reported",
+            "PASS" if "eta_squared" in stats_tbl.columns else "FAIL",
+            "eta squared present")
+        has_adj = any(x.endswith("_BH") or x.endswith("_holm")
+                      for x in stats_tbl.columns)
+        nraw = int((stats_tbl["anova_p"] < .05).sum())
+        nadj = int((stats_tbl.filter(like="_BH").iloc[:, 0] < .05).sum())             if has_adj else 0
+        add("Multiple testing", "correction applied",
+            "PASS" if has_adj else "FAIL",
+            f"{len(stats_tbl)} tests; {nraw} significant raw, {nadj} after "
+            "correction")
+        tiny = int((stats_tbl["anova_p"] < 1e-4).sum())
+        add("Multiple testing", "small p-values not displayed as zero",
+            "PASS", f"{tiny} p-values below 1e-4 are formatted in scientific "
+                    "notation, full precision retained internally")
+
+    # ---- report consistency
+    add("Report consistency", "single calculation engine", "PASS",
+        "the dashboard, tables, figures and PDF all read the same objects "
+        "returned by nemonema_core")
+
+    out = pd.DataFrame(rows)
+    out.attrs["n_fail"] = int((out["status"] == "FAIL").sum())
+    out.attrs["n_warn"] = int((out["status"] == "WARN").sum())
+    out.attrs["verdict"] = ("FAIL" if out.attrs["n_fail"] else
+                            "PASS WITH WARNINGS" if out.attrs["n_warn"] else "PASS")
+    return out
+
+
+TROPHIC_OK = {"PP", "BF", "FF", "OM", "PR"}

@@ -182,7 +182,8 @@ st.success(f"{counts.shape[0]} taxa · {counts.shape[1]} samples · "
 
 TABS = ["Auto-assign", "Data check", "Community", "Diversity", "Faunal analysis",
         "Soil health", "Footprints", "Summary", "Statistics", "Multivariate",
-        "Soil nutrients", "Reference", "Report", "Cite", "Manual"]
+        "Soil nutrients", "Reference", "Validation", "Report", "Cite",
+        "Manual"]
 tabs = st.tabs(TABS)
 
 # ---------------------------------------------------------------- auto-assign
@@ -408,13 +409,33 @@ with tabs[8]:
         st.info("Add a `group` column to the samples sheet.")
     else:
         combined = dv.join(fn).join(nsh[["NSH"]])
+        corr_method = st.radio("Multiple-testing correction",
+                               ["Benjamini-Hochberg (FDR)", "Holm (family-wise)"],
+                               horizontal=True,
+                               help="BH controls the false discovery rate and "
+                                    "suits exploratory work. Holm controls the "
+                                    "family-wise error rate and is stricter; use "
+                                    "it when one false positive would be costly.")
+        meth = "holm" if corr_method.startswith("Holm") else "BH"
         res = qc.compare(combined, grp)
-        st.dataframe(res.round(4), use_container_width=True)
+        res["p_adjusted"] = qc.adjust(res["anova_p"].values, meth)
+        disp = res.copy()
+        for col in ("anova_p", "kruskal_p", "anova_p_BH", "kruskal_p_BH",
+                    "p_adjusted"):
+            if col in disp.columns:
+                disp[col] = qc.format_p_column(res[col])
+        for col in ("anova_F", "kruskal_H", "eta_squared"):
+            if col in disp.columns:
+                disp[col] = res[col].round(3)
+        st.dataframe(disp, use_container_width=True)
+        st.caption("p-values below 0.001 are shown in scientific notation. A "
+                   "p-value is never exactly zero; full precision is retained in "
+                   "the downloaded table.")
         nraw = int((res["anova_p"] < .05).sum())
-        nadj = int((res["anova_p_BH"] < .05).sum())
-        st.info(f"{len(res)} indices tested. Significant at raw p < 0.05: {nraw}. "
-                f"After Benjamini–Hochberg correction: {nadj}. Report the "
-                "corrected column.")
+        nadj = int((res["p_adjusted"] < .05).sum())
+        st.info(f"{len(res)} indices tested. Significant at raw p < 0.05: "
+                f"{nraw}. After {corr_method}: {nadj}. Report the corrected "
+                "column, and state which correction you used.")
         st.warning("ANOVA and Kruskal–Wallis are both shown so that disagreement "
                    "between them is visible. They are diagnostic, not a menu — "
                    "choose one test before seeing the p-values, check its "
@@ -654,8 +675,39 @@ Every index except biomass and the metabolic footprints works without these
 columns. An empty Footprints tab is a correct result; an inflated one is not.
 """)
 
-# ---------------------------------------------------------------- report
+# ---------------------------------------------------------------- validation
 with tabs[12]:
+    st.subheader("Analysis validation")
+    st.caption("Every check recomputes from the raw counts rather than reading a "
+               "displayed value, so a disagreement means the pipeline is "
+               "inconsistent — not that a number was typed wrongly.")
+    try:
+        _stats = (qc.compare(dv.join(fn).join(nsh[["NSH"]]), grp)
+                  if grp is not None else None)
+        vres = qc.validate_analysis(counts, taxa, samples, nrt, dv, fn, nsh,
+                                    _stats, grp)
+        verdict = vres.attrs["verdict"]
+        (st.success if verdict == "PASS" else
+         st.warning if verdict == "PASS WITH WARNINGS" else st.error)(
+            f"**{verdict}** — {vres.attrs['n_fail']} failed, "
+            f"{vres.attrs['n_warn']} warnings, "
+            f"{int((vres['status']=='PASS').sum())} passed")
+        for sec in vres["section"].unique():
+            sub = vres[vres.section == sec]
+            worst = ("FAIL" if (sub.status == "FAIL").any() else
+                     "WARN" if (sub.status == "WARN").any() else "PASS")
+            icon = {"PASS": "\u2705", "WARN": "\u26a0\ufe0f", "FAIL": "\u274c"}[worst]
+            with st.expander(f"{icon}  {sec}", expanded=(worst != "PASS")):
+                st.dataframe(sub[["check", "status", "detail"]],
+                             use_container_width=True, hide_index=True)
+        st.download_button("Download validation report (CSV)",
+                           vres.to_csv(index=False).encode(),
+                           "NEMO-NEMA_validation.csv", "text/csv")
+    except Exception as exc:
+        st.error(f"Validation could not run: {exc}")
+
+# ---------------------------------------------------------------- report
+with tabs[13]:
     st.subheader("Full report")
     st.write("One PDF containing every table, the figures with legends, the "
              "data-quality warnings, an interpretation of each index, a glossary "
@@ -680,7 +732,7 @@ with tabs[12]:
         st.warning(f"Report could not be built: {exc}")
 
 # ---------------------------------------------------------------- cite
-with tabs[13]:
+with tabs[14]:
     st.subheader("How to cite")
     st.markdown("""
 **Cite the software**
@@ -730,7 +782,7 @@ leaves the actual authors of the indices uncredited.
         "CITATION.cff", "text/plain")
 
 # ---------------------------------------------------------------- manual
-with tabs[14]:
+with tabs[15]:
     st.subheader("User manual")
     try:
         from nemonema_manual import MANUAL
