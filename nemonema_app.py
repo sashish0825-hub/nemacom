@@ -418,12 +418,50 @@ with tabs[8]:
                                     "it when one false positive would be costly.")
         meth = "holm" if corr_method.startswith("Holm") else "BH"
         res = qc.compare(combined, grp)
-        res["p_adjusted"] = qc.adjust(res["anova_p"].values, meth)
+
+        def _adjust(p, method):
+            """Self-contained so the app never depends on a particular version
+            of the qc module being loaded on the server."""
+            p = np.asarray(p, dtype=float)
+            ok = ~np.isnan(p)
+            out = np.full(p.shape, np.nan)
+            q = p[ok]
+            m = len(q)
+            if m == 0:
+                return out
+            order = np.argsort(q)
+            adj = np.empty(m)
+            if str(method).lower().startswith("holm"):
+                running = 0.0
+                for rank, i in enumerate(order):
+                    running = max(running, q[i] * (m - rank))
+                    adj[i] = min(running, 1.0)
+            else:
+                prev = 1.0
+                for rank in range(m - 1, -1, -1):
+                    i = order[rank]
+                    prev = min(prev, q[i] * m / (rank + 1))
+                    adj[i] = prev
+            out[ok] = np.minimum(adj, 1.0)
+            return out
+
+        def _fmt_p(v, digits=3):
+            if v is None or (isinstance(v, float) and np.isnan(v)):
+                return ""
+            v = float(v)
+            if v < 1e-16:
+                return "< 1e-16"
+            if v < 0.001:
+                mant, exp = f"{v:.2e}".split("e")
+                return f"{mant} x 10^{int(exp)}"
+            return f"{v:.{digits}f}"
+
+        res["p_adjusted"] = _adjust(res["anova_p"].values, meth)
         disp = res.copy()
         for col in ("anova_p", "kruskal_p", "anova_p_BH", "kruskal_p_BH",
                     "p_adjusted"):
             if col in disp.columns:
-                disp[col] = qc.format_p_column(res[col])
+                disp[col] = [_fmt_p(v) for v in res[col]]
         for col in ("anova_F", "kruskal_H", "eta_squared"):
             if col in disp.columns:
                 disp[col] = res[col].round(3)
