@@ -1,0 +1,54 @@
+cff-version: 1.2.0
+title: "NemaCom: nematode community analysis, faunal indices and soil health scoring"
+message: "If you use this software, please cite it."
+authors:
+  - family-names: Singh
+    given-names: Ashish Kumar
+    affiliation: "Division of Nematology, ICAR-Indian Agricultural Research Institute, New Delhi"
+version: 0.3.0
+license: MIT
+abstract: >-
+  An open tool that computes Norton (1978) community descriptors, diversity
+  indices, Bongers/Ferris maturity and food-web indices, Andrassy/Ferris
+  metabolic footprints, and the Ghaderi et al. (2025) Nematode Soil Health
+  index from a single spreadsheet of nematode counts.
+references:
+  - type: article
+    authors: [{family-names: Bongers, given-names: T.}]
+    title: "The maturity index: an ecological measure of environmental disturbance based on nematode species composition"
+    journal: Oecologia
+    volume: 83
+    start: 14
+    end: 19
+    year: 1990
+  - type: article
+    authors:
+      - {family-names: Ferris, given-names: H.}
+      - {family-names: Bongers, given-names: T.}
+      - {family-names: de Goede, given-names: R.G.M.}
+    title: "A framework for soil food web diagnostics: extension of the nematode faunal analysis concept"
+    journal: Applied Soil Ecology
+    volume: 18
+    start: 13
+    end: 29
+    year: 2001
+  - type: article
+    authors: [{family-names: Ferris, given-names: H.}]
+    title: "Form and function: metabolic footprints of nematodes in the soil food web"
+    journal: European Journal of Soil Biology
+    volume: 46
+    start: 97
+    end: 104
+    year: 2010
+  - type: article
+    authors:
+      - {family-names: Ghaderi, given-names: R.}
+      - {family-names: Hayden, given-names: H.L.}
+      - {family-names: Jayaramaiah, given-names: R.H.}
+      - {family-names: Hu, given-names: H.-W.}
+      - {family-names: He, given-names: J.-Z.}
+    title: "An innovative framework fosters practical application of nematode-based indices in soil health assessment"
+    journal: European Journal of Soil Science
+    volume: 76
+    year: 2025
+    doi: 10.1111/ejss.70149
