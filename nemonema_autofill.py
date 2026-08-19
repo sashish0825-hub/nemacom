@@ -29,6 +29,11 @@ SRC_STD = ("Yeates et al. (1993) J Nematol 25:315-331 (feeding habit); "
            "Bongers & Bongers (1998) Appl Soil Ecol 10:239-251 (c-p); "
            "as tabulated in Ferris (2010) Eur J Soil Biol 46:97-104 Table 1")
 SRC_PROV = "PROVISIONAL — family not tabulated in Ferris (2010) Table 1. VERIFY."
+SRC_CONT = ("CONTESTED — sources disagree. Ferris (2010) Table 1 gives feeding "
+            "habit 1 (plant-feeding) for Aphelenchoididae; most soil "
+            "Aphelenchoides are fungal feeders and the published classification "
+            "of Cerevkova et al. (2024) treats them as such. Decide which "
+            "applies to your species and state it in your methods.")
 
 # genus -> (family, trophic, cp, confidence)
 REFERENCE = {
@@ -64,7 +69,15 @@ REFERENCE = {
     "psilenchus": ("Psilenchidae", "PP", 2, "OK"),
     "ditylenchus": ("Anguinidae", "PP", 2, "OK"),
     "anguina": ("Anguinidae", "PP", 2, "OK"),
-    "aphelenchoides": ("Aphelenchoididae", "PP", 2, "OK"),
+    # CONTESTED. Ferris (2010) Table 1 records Aphelenchoididae with feeding
+    # habit 1 (plant-feeding). Most soil Aphelenchoides are fungal feeders, and
+    # validating NEMO-NEMA against Cerevkova et al. (2024) as published by
+    # Ghaderi et al. (2025) showed the original authors classified it FF:
+    # treating it as PP gave CI r = 0.931 with a bias of -4.76 units, while FF
+    # gave r = 0.999 with a bias of -0.21. Defaulting to FF and flagging the
+    # choice, because the genus contains both foliar plant parasites and fungal
+    # feeders and the right call depends on which species are present.
+    "aphelenchoides": ("Aphelenchoididae", "FF", 2, "CONTESTED"),
     # fungivores
     "aphelenchus": ("Aphelenchidae", "FF", 2, "OK"),
     "tylencholaimus": ("Leptonchidae", "FF", 4, "OK"),
@@ -240,6 +253,29 @@ REFERENCE = {
     "prismatolaimus_group": ("Prismatolaimidae", "BF", 3, "OK"),
     "onchulus": ("Onchulidae", "PR", 3, "OK"),
     "mononchulus": ("Bathyodontidae", "BF", 4, "OK"),
+
+    # ---- genera present in Cerevkova et al. (2024) Data in Brief 57:111098
+    # that were absent from the lookup. Family placements below are given with
+    # the confidence I can actually support; VERIFY means confirm before use.
+    "acrolobus": ("Cephalobidae", "BF", 2, "OK"),
+    "pseudacrobeles": ("Cephalobidae", "BF", 2, "OK"),
+    "amplimerlinius": ("Telotylenchidae", "PP", 3, "OK"),
+    "geocenamus": ("Telotylenchidae", "PP", 3, "OK"),
+    "nagelus": ("Telotylenchidae", "PP", 3, "OK"),
+    "lelenchus": ("Tylenchidae", "PP", 2, "OK"),
+    "macropostonia": ("Criconematidae", "PP", 3, "OK"),
+    "epidorylaimus": ("Qudsianematidae", "OM", 4, "OK"),
+    "eudiplogaster": ("Diplogasteridae", "BF", 1, "OK"),
+    "tylencholaimellus": ("Leptonchidae", "FF", 4, "VERIFY"),
+    # Punctodora is a CHROMADORID, not the cyst nematode Punctodera. Ferris
+    # (2010) Table 1 gives Chromadoridae cp 3, feeding habit 6 = unicellular
+    # eukaryote feeder, which has no exact equivalent among PP/BF/FF/OM/PR.
+    # Recorded here as BF with a VERIFY flag; decide for yourself how to treat
+    # unicellular-eukaryote feeders and say so in your methods.
+    "punctodora": ("Chromadoridae", "BF", 3, "VERIFY"),
+    "ereptonema": ("Rhabditidae", "BF", 1, "VERIFY"),
+    "odontolaimus": ("Odontolaimidae", "BF", 3, "VERIFY"),
+    "paraxonchium": ("Paraxonchiidae", "OM", 5, "VERIFY"),
 }
 
 TROPHIC_NAME = {"PP": "plant parasite", "BF": "bacterivore", "FF": "fungivore",
@@ -273,8 +309,11 @@ def propose(taxon_names, cutoff: float = 0.86) -> pd.DataFrame:
                          "family": fam, "trophic": tro, "cp": cp,
                          "trophic_name": TROPHIC_NAME[tro],
                          "confidence": conf,
-                         "source": SRC_STD if conf == "OK" else SRC_PROV,
-                         "action": "review" if conf == "VERIFY" else "accept"})
+                         "source": (SRC_STD if conf == "OK" else
+                                    SRC_CONT if conf == "CONTESTED" else SRC_PROV),
+                         "action": ("accept" if conf == "OK" else
+                                    "CHOOSE — sources disagree"
+                                    if conf == "CONTESTED" else "review")})
             continue
         near = difflib.get_close_matches(k, keys, n=1, cutoff=cutoff)
         if near:
@@ -301,10 +340,12 @@ def summarise(proposal: pd.DataFrame) -> dict:
     fuzzy = int((proposal["match_type"] == "fuzzy").sum())
     none = int((proposal["match_type"] == "none").sum())
     verify = int((proposal["confidence"] == "VERIFY").sum())
+    contested = int((proposal["confidence"] == "CONTESTED").sum())
     return {"n_taxa": n, "exact": exact, "fuzzy": fuzzy, "unmatched": none,
             "provisional": verify,
+            "contested": contested,
             "ready": none == 0,
-            "needs_attention": fuzzy + none + verify,
+            "needs_attention": fuzzy + none + verify + contested,
             "message": (f"{exact} of {n} matched exactly."
                         + (f" {fuzzy} matched only approximately — check the spelling."
                            if fuzzy else "")
@@ -353,7 +394,9 @@ def reference_table() -> pd.DataFrame:
             "genus": gen.capitalize(), "family": fam, "trophic": tro,
             "trophic_name": TROPHIC_NAME[tro], "cp": cp,
             "trait_confidence": conf,
-            "trait_source": SRC_STD if conf == "OK" else SRC_PROV.format(fam=fam),
+            "trait_source": (SRC_STD if conf == "OK" else
+                             SRC_CONT if conf == "CONTESTED"
+                             else SRC_PROV.format(fam=fam)),
             "length_um": np.nan, "diameter_um": np.nan, "a_ratio": np.nan,
             "n_measured": np.nan, "stage_measured": "",
             "morphometry_source": "", "family_weight_ug": np.nan,

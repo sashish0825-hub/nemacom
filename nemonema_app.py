@@ -63,6 +63,142 @@ with _h[1]:
 st.write("")
 
 
+# --------------------------------------------------------------------------
+def _template_bytes():
+    """Blank input workbook with every sheet and column the app understands."""
+    b = io.BytesIO()
+    readme = pd.DataFrame({"NEMO-NEMA input template": [
+        "",
+        "Fill the YELLOW-headed sheets. Do not rename sheets or first-row headers.",
+        "",
+        "counts   REQUIRED. Taxa in rows, samples in columns, individuals recovered.",
+        "         Use ONE consistent soil basis for every sample. Per 100 g dry soil",
+        "         is strongly preferred: the soil health index assumes it.",
+        "         Blank or 0 = absent. Numbers only. Sample names must be unique.",
+        "         Keep taxonomic resolution consistent - never enter a family AND a",
+        "         genus inside it (Plectidae and Plectus double-counts).",
+        "",
+        "taxa     One row per taxon in counts, spelled exactly the same.",
+        "  trophic  PP plant parasite / BF bacterivore / FF fungivore /",
+        "           OM omnivore / PR predator      Yeates et al. (1993)",
+        "  cp       colonizer-persister value, whole number 1-5",
+        "           Bongers (1990); Bongers & Bongers (1998)",
+        "  source   where you got each assignment. Every maturity and food-web index",
+        "           is built from trophic and cp; a wrong assignment gives a",
+        "           plausible-looking wrong index that no software can detect.",
+        "  If this sheet is missing or blank, the Auto-assign tab proposes values",
+        "  from the taxon names, with source and confidence on every row.",
+        "",
+        "  OPTIONAL, for biomass and metabolic footprints only:",
+        "  length_um, diameter_um   your own measurements, micrometres (best)",
+        "  length_um, a_ratio       de Man's a = length / greatest diameter",
+        "  family_weight_ug         published family mean, e.g. Ferris (2010) Table 1",
+        "  n_measured, stage_measured, morphometry_source",
+        "  Leave blank unless you have measured or sourced values. Every other index",
+        "  works without them; an empty Footprints tab is a correct result.",
+        "",
+        "samples  One row per sample column in counts, names matching exactly.",
+        "  group    REQUIRED for any statistics. The factor you are comparing.",
+        "  field / plot / block   STRONGLY RECOMMENDED. Without them the software",
+        "           cannot tell an independent replicate from a subsample of the",
+        "           same plot. If rows share a plot they are subsamples, and",
+        "           treating them as replicates makes every p-value too small.",
+        "  At least 3 independent replicates per group; 4 or 5 is safer.",
+        "",
+        "nutrients  OPTIONAL. Soil chemistry, physics or biology, one row per sample.",
+        "           Any numeric column is treated as a soil variable. Enables the",
+        "           Soil nutrients tab: correlation, redundancy analysis, soil PCA.",
+        "",
+        "Delete the example rows before entering your own data.",
+    ]})
+    counts = pd.DataFrame({
+        "Taxon": ["Meloidogyne", "Helicotylenchus", "Aphelenchus",
+                  "Cephalobus", "Rhabditis", "Dorylaimus", "Mononchus"],
+        "S01": [180, 41, 22, 120, 35, 8, 4],
+        "S02": [143, 12, 31, 96, 28, 5, 2],
+        "S03": [96, 0, 18, 143, 44, 3, 1],
+        "S04": [70, 55, 60, 210, 130, 22, 11],
+        "S05": [55, 38, 72, 188, 145, 18, 9],
+        "S06": [62, 44, 51, 176, 121, 25, 13]})
+    taxa = pd.DataFrame({
+        "Taxon": ["Meloidogyne", "Helicotylenchus", "Aphelenchus", "Cephalobus",
+                  "Rhabditis", "Dorylaimus", "Mononchus"],
+        "trophic": ["PP", "PP", "FF", "BF", "BF", "OM", "PR"],
+        "cp": [3, 3, 2, 2, 1, 4, 4],
+        "source": ["<enter your reference>"] * 7,
+        "length_um": [None] * 7, "diameter_um": [None] * 7, "a_ratio": [None] * 7,
+        "n_measured": [None] * 7, "stage_measured": [None] * 7,
+        "morphometry_source": [None] * 7, "family_weight_ug": [None] * 7,
+        "weight_source": [None] * 7})
+    samples = pd.DataFrame({
+        "Sample": [f"S0{i}" for i in range(1, 7)],
+        "group": ["Untreated"] * 3 + ["Amended"] * 3,
+        "field": [f"Field_{i}" for i in range(1, 7)],
+        "plot": [f"P{i}" for i in range(1, 7)],
+        "block": [1, 1, 2, 1, 1, 2],
+        "replicate": [1, 2, 3, 1, 2, 3],
+        "crop": ["Rice"] * 6, "depth_cm": ["0-15"] * 6,
+        "sampling_date": ["2026-03-14"] * 6,
+        "soil_basis": ["per 100 g dry soil"] * 6})
+    nutrients = pd.DataFrame({
+        "Sample": [f"S0{i}" for i in range(1, 7)],
+        "pH": [None] * 6, "EC_dS_m": [None] * 6, "organic_C_pct": [None] * 6,
+        "available_N_kg_ha": [None] * 6, "available_P_kg_ha": [None] * 6,
+        "available_K_kg_ha": [None] * 6, "microbial_biomass_C_mg_kg": [None] * 6,
+        "PMN_mg_kg": [None] * 6})
+    with pd.ExcelWriter(b, engine="openpyxl") as x:
+        readme.to_excel(x, sheet_name="READ_ME", index=False)
+        counts.to_excel(x, sheet_name="counts", index=False)
+        taxa.to_excel(x, sheet_name="taxa", index=False)
+        samples.to_excel(x, sheet_name="samples", index=False)
+        nutrients.to_excel(x, sheet_name="nutrients", index=False)
+    return b.getvalue()
+
+
+def _demo_bytes():
+    """Small worked example: 8 taxa, 2 treatments, 3 independent replicates each."""
+    rng = np.random.default_rng(11)
+    names = ["Meloidogyne", "Helicotylenchus", "Xiphinema", "Aphelenchus",
+             "Cephalobus", "Rhabditis", "Dorylaimus", "Mononchus"]
+    tro = ["PP", "PP", "PP", "FF", "BF", "BF", "OM", "PR"]
+    cp = [3, 3, 5, 2, 2, 1, 4, 4]
+    base = {"Organic": [95, 70, 11, 85, 120, 180, 30, 14],
+            "Inorganic": [320, 175, 2, 28, 34, 70, 6, 3]}
+    cols, meta = [], []
+    for loc in ["Punjab", "UP", "Maharashtra", "Kerala"]:
+        for sy in ["Organic", "Inorganic"]:
+            for r in (1, 2, 3):
+                cols.append(f"{loc[:3]}_{sy[:3]}_{r}")
+                meta.append({"group": sy, "location": loc,
+                             "field": f"{loc} field {r}", "replicate": r,
+                             "soil_basis": "per 100 g dry soil"})
+    counts = pd.DataFrame(
+        {c: rng.poisson(np.array(base[m["group"]], float) * rng.uniform(.75, 1.3))
+         for c, m in zip(cols, meta)}, index=names)
+    counts.index.name = "Taxon"
+    taxa = pd.DataFrame({"Taxon": names, "trophic": tro, "cp": cp,
+                         "source": ["Yeates et al. (1993); Bongers & Bongers "
+                                    "(1998), as tabulated in Ferris (2010) "
+                                    "Table 1"] * len(names)})
+    samples = pd.DataFrame(meta, index=cols)
+    samples.index.name = "Sample"
+    readme = pd.DataFrame({"SYNTHETIC DEMO — NOT REAL MEASUREMENTS": [
+        "", "These counts were generated by a random number generator to show",
+        "what the output looks like. They are not measurements and no conclusion",
+        "may be drawn from them.", "",
+        "Design: 4 locations x 2 systems x 3 independent field replicates = 24",
+        "samples, 8 genera, counts per 100 g dry soil. group = farming system.",
+        "", "Organic samples were given more free-living nematodes and fewer plant",
+        "parasites, so any 'result' is that instruction read back."]})
+    b = io.BytesIO()
+    with pd.ExcelWriter(b, engine="openpyxl") as x:
+        readme.to_excel(x, sheet_name="READ_ME", index=False)
+        counts.to_excel(x, sheet_name="counts")
+        taxa.to_excel(x, sheet_name="taxa", index=False)
+        samples.to_excel(x, sheet_name="samples")
+    return b.getvalue()
+
+
 def footer():
     st.divider()
     st.markdown(
@@ -114,6 +250,15 @@ with st.sidebar:
     st.caption("Three sheets: counts, taxa, samples. "
                "Only `counts` is essential — the Auto-assign tab can propose "
                "trophic group and c-p from taxon names.")
+    _x = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    st.download_button("Download blank template", _template_bytes(),
+                       "NEMO-NEMA_template.xlsx", _x,
+                       help="Every sheet and column the app understands, with "
+                            "notes and example rows to delete.")
+    st.download_button("Download demo dataset", _demo_bytes(),
+                       "NEMO-NEMA_demo.xlsx", _x,
+                       help="A small worked example so you can see the output "
+                            "before preparing your own data.")
 
     st.header("2. Figure style")
     pal = st.selectbox("Colour palette", list(npl.PALETTES))
