@@ -20,6 +20,8 @@ import streamlit as st
 import matplotlib.pyplot as plt
 
 import nemonema_core as nc
+import nemonema_ingest as ing
+import nemonema_autofill as _af
 import nemonema_plots as npl
 import nemonema_qc as qc
 import nemonema_summary as nsum
@@ -246,7 +248,12 @@ def show(fig_fn, table, key, caption="", dpi=300, default="Figure"):
 # ==========================================================================
 with st.sidebar:
     st.header("1. Your data")
-    up = st.file_uploader("Excel workbook (.xlsx)", type=["xlsx"])
+    _mode = st.radio("Input", ["NEMO-NEMA workbook", "Any layout (auto-import)"],
+                     help="The second option accepts a spreadsheet in whatever "
+                          "layout you already have and converts it, showing you "
+                          "the interpretation before anything is analysed.")
+    up = (st.file_uploader("Excel workbook (.xlsx)", type=["xlsx"])
+          if _mode.startswith("NEMO") else None)
     st.caption("Three sheets: counts, taxa, samples. "
                "Only `counts` is essential — the Auto-assign tab can propose "
                "trophic group and c-p from taxon names.")
@@ -277,6 +284,20 @@ with st.sidebar:
     basis = st.selectbox("Counts are expressed per",
                          ["100 g dry soil", "200 cc soil", "250 g soil", "other"],
                          help="The NSH abundance band assumes per 100 g dry soil.")
+
+class _Imported(io.BytesIO):
+    """A workbook nc.load() can read, carrying a .name like an upload does."""
+    name = "imported.xlsx"
+
+
+if _mode.startswith("Any"):
+    ing.set_reference_taxa(_af.REFERENCE.keys())
+    _wb, _label = ing.render_import_ui(st)
+    if _wb is None:
+        footer()
+        st.stop()
+    up = _Imported(_wb)
+    up.name = _label
 
 if up is None:
     c1, c2 = st.columns([3, 2])
